@@ -1,0 +1,4 @@
+interface:
+  display_name: "PocketBase AI MVP Builder"
+  short_description: "Build, version, and deploy PocketBase MVPs with AI agents."
+  default_prompt: "Use this skill to design, implement, version, and deploy a PocketBase-based MVP or internal tool, including macOS setup, GitHub CLI workflow, schema, API rules, realtime sync, PocketBase app.Cron scheduled jobs, files, Aliyun OSS S3-compatible storage, database backups and restore, Aliyun ECS, systemd, logging, rollback, and Caddy HTTPS."
