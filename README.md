@@ -2,7 +2,7 @@
 
 这是一个面向 AI agent 的 Codex Skill，用来指导 agent 基于 [PocketBase](https://pocketbase.io/) 做小型 MVP、内部系统、运营工具、测试工具和少量用户产品的二次开发。
 
-它的目标不是写一份普通教程，而是把一套专业但轻量的系统开发流程交给 AI agent：从本地 macOS 环境、PocketBase Go 扩展、权限规则、realtime、文件存储、定时任务、GitHub 版本管理，到阿里云 ECS、Caddy HTTPS、日志、备份、回滚和首次 superuser 设置。
+它的目标不是写一份普通教程，而是把一套专业但轻量的系统开发流程交给 AI agent：从本地 macOS 环境、PocketBase Go 扩展、权限规则、手机号短信认证、realtime、文件存储、定时任务、GitHub 版本管理，到阿里云 ECS、Caddy HTTPS、日志、备份、回滚和首次 superuser 设置。
 
 ## 适合谁
 
@@ -17,6 +17,7 @@
 - PocketBase Go 扩展：`main.go`、migrations、hooks、custom routes、commands。
 - 数据建模：collections、auth collections、relations、status、audit fields。
 - 权限系统：API rules、owner-only、role-based、匿名/登录/管理员测试。
+- 手机号短信认证：阿里云号码认证服务、短信验证码注册/登录、绑定手机号、强身份表单验证。
 - Realtime：前后端实时同步、双窗口验证、事件合并。
 - 文件存储：PocketBase file field、本地 `pb_data`、S3-compatible object storage。
 - 阿里云 OSS：AWS S3 兼容 endpoint、RAM AccessKey、独立备份 bucket 建议。
@@ -74,16 +75,17 @@ flowchart TD
     C --> D["PocketBase Go 扩展项目"]
     D --> E["Collections + Migrations"]
     E --> F["API Rules 权限设计"]
-    F --> G["前端 + PocketBase JS SDK"]
-    G --> H["Realtime 双窗口验证"]
-    H --> I["Files / OSS / S3 兼容存储"]
-    I --> J["app.Cron 定时任务"]
-    J --> K["测试、日志、备份验证"]
-    K --> L["GitHub commit / tag / release"]
-    L --> M["本机编译打包"]
-    M --> N["部署到阿里云 ECS"]
-    N --> O["Caddy 自动 HTTPS"]
-    O --> P["上线验收和回滚预案"]
+    F --> G["手机号短信认证<br/>阿里云号码认证服务"]
+    G --> H["前端 + PocketBase JS SDK"]
+    H --> I["Realtime 双窗口验证"]
+    I --> J["Files / OSS / S3 兼容存储"]
+    J --> K["app.Cron 定时任务"]
+    K --> L["测试、日志、备份验证"]
+    L --> M["GitHub commit / tag / release"]
+    M --> N["本机编译打包"]
+    N --> O["部署到阿里云 ECS"]
+    O --> P["Caddy 自动 HTTPS"]
+    P --> Q["上线验收和回滚预案"]
 ```
 
 ## 推荐部署架构
@@ -97,6 +99,7 @@ flowchart LR
     PB --> DB["pb_data<br/>SQLite + metadata"]
     PB --> Logs["Dashboard > Logs"]
     PB --> Cron["app.Cron<br/>定时任务"]
+    PB --> SMS["阿里云号码认证服务<br/>短信验证码注册/登录"]
     PB --> OSS["阿里云 OSS<br/>S3-compatible 文件/备份"]
     Systemd["systemd<br/>自启动 / 崩溃重启"] --> PB
     Agent["AI agent"] --> SSH["SSH / rsync / scp"]
@@ -138,6 +141,41 @@ gitGraph
 - `app.Cron()` 定时任务完成并验证后。
 - 部署脚本、Caddyfile、systemd service、备份/回滚脚本完成后。
 - 远程 smoke test 通过后打 tag，例如 `v0.1.0`。
+
+## 手机号短信认证流程
+
+新系统面向真实用户时，手机号通常是最基础的身份能力。这个 skill 要求 agent 把短信验证码注册/登录做在 PocketBase Go 后端，并使用阿里云号码认证服务。
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant F as 前端
+    participant PB as PocketBase Go 后端
+    participant Ali as 阿里云号码认证服务
+    participant DB as PocketBase 数据库
+
+    U->>F: 输入手机号
+    F->>PB: request-code(register/login/form_verify)
+    PB->>DB: 写入 sms_challenges 审计记录
+    PB->>Ali: SendSmsVerifyCode
+    Ali-->>PB: requestId / 发送结果
+    PB-->>F: maskedPhone + cooldown
+    U->>F: 输入验证码
+    F->>PB: verify-code / register / login
+    PB->>Ali: CheckSmsVerifyCode
+    Ali-->>PB: Model.VerifyResult=PASS
+    PB->>DB: 创建或更新用户 / 标记手机号已验证
+    PB-->>F: auth token 或表单验证成功
+```
+
+关键原则：
+
+- AccessKey 只在服务端。
+- 验证码不能明文入库或写日志。
+- `phone_verified` 只能由后端写入。
+- 不暴露手机号是否已注册。
+- 按手机号、IP、purpose 做限流。
+- 表单手机号如果有强身份要求，也必须经过短信校验。
 
 ## 数据备份原则
 
@@ -211,6 +249,7 @@ agent 必须提醒用户：
 - [SKILL.md](SKILL.md)：agent 触发后最先读取的主工作流。
 - [课堂提示词模板](references/agent-prompt-template.md)：给学生直接复制给 agent 的提示词。
 - [PocketBase 实战模式参考](references/pocketbase-patterns.md)：数据建模、权限、realtime、文件、定时任务、备份、日志。
+- [手机号短信认证与阿里云号码认证服务](references/phone-sms-auth-aliyun.md)：注册、登录、绑定手机号、强身份表单验证。
 - [阿里云部署 + GitHub CLI + Caddy 参考](references/aliyun-deployment-github-caddy.md)：ECS、SSH、Caddy、systemd、日志、superuser、备份恢复、阿里云 OSS。
 
 ## 官方资料
@@ -224,6 +263,9 @@ agent 必须提醒用户：
 - [Caddy Automatic HTTPS](https://caddyserver.com/docs/automatic-https)
 - [GitHub CLI Manual](https://cli.github.com/manual/)
 - [阿里云 OSS：使用 AWS SDK 访问 OSS](https://help.aliyun.com/zh/oss/developer-reference/use-aws-sdks-to-access-oss)
+- [阿里云号码认证服务：短信认证服务新手指南](https://help.aliyun.com/zh/pnvs/getting-started/sms-authentication-service-novice-guide)
+- [阿里云号码认证服务：SendSmsVerifyCode](https://help.aliyun.com/zh/pnvs/developer-reference/api-dypnsapi-2017-05-25-sendsmsverifycode)
+- [阿里云号码认证服务：CheckSmsVerifyCode](https://help.aliyun.com/zh/pnvs/developer-reference/api-dypnsapi-2017-05-25-checksmsverifycode)
 
 ## 安全边界
 

@@ -7,6 +7,7 @@
 - [项目结构](#项目结构)
 - [数据建模](#数据建模)
 - [API Rules](#api-rules)
+- [手机号短信认证](#手机号短信认证)
 - [Realtime 前后端同步](#realtime-前后端同步)
 - [文件和 S3 兼容存储](#文件和-s3-兼容存储)
 - [Go 扩展点](#go-扩展点)
@@ -25,6 +26,7 @@ PocketBase 适合小型 MVP、内部系统、设计/运营/测试团队工具、
 - SQLite 数据存储和 collections。
 - 内置 Admin UI，用于管理 collections、数据、用户、文件、设置。
 - Auth collections，用于普通用户、员工、客户等登录身份。
+- 手机号短信认证，用于注册、登录、账号绑定和强身份表单。
 - API rules，用声明式规则控制 list/view/create/update/delete。
 - 自动 REST API 和 SDK 访问。
 - Realtime subscriptions，用于前后端即时同步。
@@ -132,6 +134,7 @@ npm install pocketbase
 字段建议：
 
 - 所有权：`owner` relation -> `users`。
+- 手机号身份：在 auth collection 中保存 normalized phone、verified state 和 phone login flags。
 - 组织隔离：`organization` relation -> `organizations`。
 - 工作流：`status` select，比如 `draft/submitted/approved/rejected/done`。
 - 指派：`assignee` relation -> `users`。
@@ -183,6 +186,53 @@ owner = @request.auth.id && status != "approved"
 - 非拥有者是否无法查看/修改。
 - 管理员/运营是否有预期权限。
 - 前端隐藏按钮之外，直接调 API 是否也被拒绝。
+
+## 手机号短信认证
+
+真实用户注册和登录时，默认优先考虑手机号作为基础身份能力。Agent 遇到“手机号注册、短信登录、绑定手机号、强身份表单、找回密码、敏感操作验证”时，应读取 `phone-sms-auth-aliyun.md`，并使用 PocketBase Go 后端集成阿里云号码认证服务。
+
+必须遵守：
+
+- 短信发送和验证码校验只在服务端做。
+- 使用阿里云 `SendSmsVerifyCode` 发送验证码。
+- 使用阿里云 `CheckSmsVerifyCode` 校验验证码。
+- 当前阿里云文档中，校验成功要确认 `Model.VerifyResult = PASS`，不能只看 HTTP 成功或 `Code=OK`。
+- AccessKey 不能进前端、不能进 GitHub。
+- 验证码不能明文入库或写日志。
+- 客户端不能直接设置 `phone_verified`、`phone_verified_at`、`phone_verification_id`。
+- 错误文案不能暴露“手机号是否已注册”，防止枚举账号。
+
+推荐数据模型：
+
+- `users` 增加 `phone_e164`、`phone_national`、`phone_verified`、`phone_verified_at`、`phone_login_enabled`、`password_login_enabled`。
+- 新增 locked/server-only collection：`sms_challenges`，记录 purpose、phone hash、out id、阿里云 request id、IP hash、attempts、expires_at、verified_at、status。
+
+推荐后端接口：
+
+```text
+POST /api/phone/request-code
+POST /api/phone/verify-code
+POST /api/auth/phone/register
+POST /api/auth/phone/login
+POST /api/account/phone/bind
+POST /api/forms/:collection/:id/verify-phone
+```
+
+推荐流程：
+
+- 注册：手机号 -> 发送验证码 -> 校验验证码 -> 创建 user -> 标记 phone_verified -> 签发 auth token 或引导设置密码。
+- 登录：手机号 -> 发送验证码 -> 校验验证码 -> 查找 user -> 签发 auth token。
+- 手机号 + 密码：只有 `phone_verified = true` 且 `password_login_enabled = true` 才允许。
+- 表单验证：表单手机号必须经过 `form_verify` purpose 的短信校验，后端写入 verified 标记。
+
+测试清单：
+
+- 正常注册、正常登录、重复注册、错误验证码、过期验证码、已消费验证码。
+- 同手机号和同 IP 频控。
+- 绑定/更换手机号。
+- 强身份表单未验证不能提交。
+- API rules 不能直接写 verified 字段。
+- 日志里没有完整手机号、验证码、AccessKey。
 
 ## Realtime 前后端同步
 

@@ -14,6 +14,8 @@
 - 访问量预期：[本地演示 / 少数内部用户 / 小规模真实用户]
 - 上线目标：[只本地演示 / 部署到阿里云 ECS / 暂不确定]
 - 域名：[例如 app.example.com，没有就写没有]
+- 登录注册方式：[手机号短信注册登录 / 邮箱密码 / 管理员邀请 / 不确定]
+- 手机号验证场景：[注册登录 / 绑定手机号 / 提交表单前验证 / 找回密码 / 不需要 / 不确定]
 - 是否需要定时任务：[例如每天发报表 / 每小时同步 / 自动清理 / 不需要 / 不确定]
 
 ## 角色和权限
@@ -48,6 +50,8 @@
 - 如果网络在国内，请配置 Go 和 NPM 代理：GOPROXY、GOSUMDB、npm registry。
 - 请安装并使用 GitHub CLI `gh` 维护仓库、分支、提交、tag 和 release。
 - 权限必须通过 PocketBase API rules 实现，不要只在前端隐藏按钮。
+- 如果系统面向真实用户，请默认把手机号作为基础身份能力。使用阿里云号码认证服务实现短信验证码：服务端调用 `SendSmsVerifyCode` 发送验证码，服务端调用 `CheckSmsVerifyCode` 校验验证码。只有阿里云校验结果明确成功，包括 `Model.VerifyResult = PASS`，才能注册、登录、绑定手机号或通过强身份表单。
+- 手机号短信认证必须由 PocketBase Go 后端实现，不能只做前端页面。AccessKey 不能进前端、不能进 GitHub，验证码不能明文入库或写日志。
 - 文件上传使用 PocketBase file field；如果需要对象存储，请按阿里云 OSS 的 S3 兼容方案配置，endpoint 示例：`https://s3.oss-cn-hangzhou.aliyuncs.com`，并提醒我不要泄漏 AccessKey。
 - 如果部署到服务器，请使用阿里云 ECS + Caddy。Caddy 必须负责 HTTPS，使用免费自动证书。
 - 本机负责开发、测试、编译和打包；Linux 服务器负责运行。请通过 SSH/rsync/scp 部署。
@@ -67,6 +71,8 @@
 - CPU 架构：[x86_64 / arm64 / 不确定]
 - 阿里云 OSS：[不需要 / 需要，bucket 和 region 是 xxx / 不确定]
 - 备份存储：[PocketBase 本地备份 / 阿里云 OSS 独立 bucket / 暂不确定]
+- 阿里云号码认证服务：[已开通 / 未开通 / 不确定]
+- 短信签名/模板/方案名称：[已有，分别是 xxx / 没有 / 不确定]
 
 ## 请按这个顺序工作
 
@@ -75,15 +81,17 @@
 3. 搭建本地开发环境和项目结构，包括 `gh`。
 4. 初始化或连接 GitHub 仓库；创建合理分支；每个可运行里程碑主动 commit 并 push。
 5. 创建 PocketBase 后端：Go 项目、迁移、必要 hooks/custom routes、启动命令。
-6. 创建前端：登录、核心业务页面、实时同步、文件上传。
-7. 做权限测试：匿名、普通用户、数据拥有者、非拥有者、管理员。
-8. 做 realtime 测试：两个浏览器/两个账号同时打开，验证不刷新同步。
-9. 如果需要定时任务，用 PocketBase `app.Cron()` 实现；给出 cron 表达式、job id、日志和 Dashboard 验证方式。
-10. 做文件测试：上传、预览/下载、受保护访问；如果用 OSS，验证阿里云 S3 兼容上传下载。
-11. 配置数据库备份：PocketBase 内置 Backups、部署前备份脚本、恢复脚本、OSS 备份提醒；至少做一次手动备份验证。
-12. 本机编译打包，然后部署到阿里云 ECS：systemd 运行 PocketBase，Caddy 反向代理并自动 HTTPS。
-13. 远程 smoke test 成功后打 tag，必要时创建 GitHub release。
-14. 最后给我：运行命令、GitHub repo/branch/commit/tag、服务器 URL、测试结果、账号创建方式、定时任务说明、备份文件名和恢复方式、已知限制、下一步建议。
+6. 如果需要真实用户账号，请实现手机号短信注册/登录：users 手机号字段、sms_challenges 审计表、发送验证码接口、校验验证码接口、注册/登录/绑定手机号流程、限流和日志。
+7. 创建前端：手机号注册登录、核心业务页面、实时同步、文件上传。
+8. 做权限测试：匿名、普通用户、数据拥有者、非拥有者、管理员。
+9. 做短信认证测试：正常注册、正常登录、错误验证码、过期验证码、重复注册、频控、手机号绑定、强身份表单验证。
+10. 做 realtime 测试：两个浏览器/两个账号同时打开，验证不刷新同步。
+11. 如果需要定时任务，用 PocketBase `app.Cron()` 实现；给出 cron 表达式、job id、日志和 Dashboard 验证方式。
+12. 做文件测试：上传、预览/下载、受保护访问；如果用 OSS，验证阿里云 S3 兼容上传下载。
+13. 配置数据库备份：PocketBase 内置 Backups、部署前备份脚本、恢复脚本、OSS 备份提醒；至少做一次手动备份验证。
+14. 本机编译打包，然后部署到阿里云 ECS：systemd 运行 PocketBase，Caddy 反向代理并自动 HTTPS。
+15. 远程 smoke test 成功后打 tag，必要时创建 GitHub release。
+16. 最后给我：运行命令、GitHub repo/branch/commit/tag、服务器 URL、测试结果、手机号认证方案、账号创建方式、定时任务说明、备份文件名和恢复方式、已知限制、下一步建议。
 
 ## 交付偏好
 
@@ -96,5 +104,5 @@
 ## 课堂用极简版本
 
 ```markdown
-请使用 PocketBase 帮我做一个 [系统名称]。你要像全栈工程师一样直接创建可运行项目：macOS 环境配置、GitHub CLI 仓库和分支维护、Go 扩展版 PocketBase 后端、collections/migrations、API rules 权限、官方 JS SDK 前端、realtime 实时同步、PocketBase app.Cron 定时任务、文件上传/阿里云 OSS S3 兼容存储说明、数据库备份和恢复、测试和运行命令都要完整。本机开发编译，部署到阿里云 ECS，用 Caddy 自动申请免费 HTTPS 证书。我的用户是 [角色]，核心数据是 [数据对象]，最重要的实时场景是 [实时场景]，需要的定时任务是 [定时任务，没有就写无]。如果信息不足，先问最多 5 个问题，然后开始实现。
+请使用 PocketBase 帮我做一个 [系统名称]。你要像全栈工程师一样直接创建可运行项目：macOS 环境配置、GitHub CLI 仓库和分支维护、Go 扩展版 PocketBase 后端、collections/migrations、API rules 权限、手机号短信注册登录、阿里云号码认证服务 SendSmsVerifyCode/CheckSmsVerifyCode、官方 JS SDK 前端、realtime 实时同步、PocketBase app.Cron 定时任务、文件上传/阿里云 OSS S3 兼容存储说明、数据库备份和恢复、测试和运行命令都要完整。本机开发编译，部署到阿里云 ECS，用 Caddy 自动申请免费 HTTPS 证书。我的用户是 [角色]，核心数据是 [数据对象]，最重要的实时场景是 [实时场景]，需要的手机号验证场景是 [注册登录/表单验证/无]，需要的定时任务是 [定时任务，没有就写无]。如果信息不足，先问最多 5 个问题，然后开始实现。
 ```

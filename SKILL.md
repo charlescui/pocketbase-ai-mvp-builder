@@ -1,6 +1,6 @@
 ---
 name: pocketbase-ai-mvp-builder
-description: Build or extend PocketBase-based MVPs, internal tools, admin systems, and small SaaS prototypes with AI agents. Use when the task involves PocketBase local macOS setup, Go/JavaScript secondary development, collections and migrations, auth and API rules, realtime frontend synchronization, file uploads or Aliyun OSS/S3-compatible object storage, scheduled jobs with PocketBase app.Cron, GitHub CLI repository/version workflows, Caddy HTTPS, Aliyun ECS/Linux server deployment and operations, systemd autostart, logging, database backup, rollback, packaging, superuser/admin setup, admin dashboard workflows, SDK/API integration, or teaching non-engineers how to drive an agent to build professional small systems.
+description: Build or extend PocketBase-based MVPs, internal tools, admin systems, and small SaaS prototypes with AI agents. Use when the task involves PocketBase local macOS setup, Go/JavaScript secondary development, collections and migrations, auth and API rules, realtime frontend synchronization, phone number identity, SMS verification, Aliyun Phone Number Verification Service/号码认证服务, login/registration by mobile phone, file uploads or Aliyun OSS/S3-compatible object storage, scheduled jobs with PocketBase app.Cron, GitHub CLI repository/version workflows, Caddy HTTPS, Aliyun ECS/Linux server deployment and operations, systemd autostart, logging, database backup, rollback, packaging, superuser/admin setup, admin dashboard workflows, SDK/API integration, or teaching non-engineers how to drive an agent to build professional small systems.
 ---
 
 # PocketBase AI MVP Builder
@@ -14,6 +14,7 @@ Default to a simple architecture:
 - PocketBase backend extended with Go when custom behavior, routes, hooks, cron jobs, or production-grade migrations are needed.
 - A Vite/React or existing frontend client using the official PocketBase JS SDK.
 - Schema and permission changes captured as migrations, not only manual admin clicks.
+- Phone-number identity treated as a first-class auth path when real users register, log in, bind accounts, or submit forms that require verified identity.
 - Realtime treated as a first-class product capability: initialize state from API, subscribe to changes, merge create/update/delete events into the UI, and verify with two browser sessions.
 - Scheduled/background work implemented with PocketBase's built-in `app.Cron()` when the job belongs to the application.
 - GitHub CLI (`gh`) used to create and maintain the repository, branches, commits, tags, and releases.
@@ -29,6 +30,7 @@ Read these only when needed:
 
 - `references/agent-prompt-template.md`: copy-ready Chinese prompt for students to give an AI agent.
 - `references/pocketbase-patterns.md`: setup commands, schema patterns, auth rule recipes, realtime patterns, file/S3 guidance, and deployment checklist.
+- `references/phone-sms-auth-aliyun.md`: Aliyun Phone Number Verification Service integration, SMS code registration/login, verified phone binding, form identity verification, data model, custom PocketBase endpoints, rate limiting, security and testing.
 - `references/aliyun-deployment-github-caddy.md`: Aliyun OSS S3-compatible configuration, GitHub CLI workflow, Aliyun ECS Linux setup, Caddy HTTPS, systemd, logs, superuser setup, build/deploy/rollback/backup commands.
 
 ## Workflow
@@ -40,6 +42,7 @@ Ask only the missing questions that block implementation. For non-engineers, tra
 Capture:
 
 - Users and roles: anonymous visitor, registered user, operator, reviewer, admin, superuser.
+- Identity requirements: whether phone number must be the primary login identifier, whether SMS code login is supported, whether password login is optional after phone verification, and which forms require verified phone ownership.
 - Core records: what each record represents, who owns it, and who can see/change it.
 - Realtime moments: where two users or tabs should update instantly.
 - Files: upload types, privacy, size expectations, and whether S3-compatible object storage is required.
@@ -118,6 +121,7 @@ Prefer official docs examples for current hook/router signatures because PocketB
 Create collections from the product model:
 
 - Use auth collections for login identities such as `users`, `staff`, or `clients`.
+- For Chinese public/internal systems, default to a verified phone-number identity model when the user base is real people. Store normalized phone fields and verification state in the auth collection; do not trust a client-submitted phone number as verified.
 - Use relation fields for ownership and organization membership instead of duplicating user names.
 - Use select fields for stable statuses and roles; document the allowed values.
 - Use file fields for user-uploaded files; store external URLs only when the file is truly managed elsewhere.
@@ -125,6 +129,28 @@ Create collections from the product model:
 - Add `created`, `updated`, ownership, status, and audit fields where workflow matters.
 
 For production-like work, implement schema as migrations and run them locally. Keep admin-dashboard edits only for exploration unless the user explicitly wants a no-code classroom path.
+
+### 4.5. Add Phone SMS Identity When Needed
+
+Use Aliyun Phone Number Verification Service/号码认证服务 for SMS code flows when the product needs reliable phone ownership:
+
+- New user registration by phone number.
+- SMS-code login or phone+password login after verification.
+- Binding/changing a phone number on an existing account.
+- High-trust forms where users must prove they own the submitted phone number.
+- Password reset or sensitive account actions that require SMS verification.
+
+Implement this in the PocketBase backend, never only in the frontend:
+
+- Add locked/server-only audit collections for SMS challenges and verification attempts.
+- Add custom Go routes for requesting and checking codes.
+- Call Aliyun `SendSmsVerifyCode` to send a code and `CheckSmsVerifyCode` to verify it.
+- Treat verification as successful only when the Aliyun check result is explicitly successful, including `Model.VerifyResult = PASS` in the current API.
+- Never store raw SMS codes, never return whether a phone number already exists, and never expose Aliyun AccessKeys to the frontend.
+- Rate limit by phone, IP, purpose, and user agent; add cooldowns and attempt limits.
+- Log masked phone numbers or hashes only.
+
+After verification, either create/login the user through the current PocketBase auth-token API, or require the user to set a password before enabling phone+password login. Read `references/phone-sms-auth-aliyun.md` before implementing.
 
 ### 5. Design API Rules Before UI
 
@@ -207,6 +233,7 @@ Run the smallest meaningful verification set:
 - API rule checks for anonymous, owner, non-owner, operator/admin.
 - Realtime check in two sessions.
 - Scheduled jobs checked in `Dashboard > Settings > Crons` when jobs are registered.
+- Phone SMS auth checked for request-code, verify-code, register, login, phone binding, duplicate phone, rate limit, wrong code, expired code, and form verification scenarios when enabled.
 - File upload/download and protected-file access checks.
 - Local and server logs checked for startup errors, 4xx/5xx bursts, migration errors, realtime errors, file storage errors, and Caddy certificate/proxy errors.
 - Backup/restore proof: built-in PocketBase backup configured or manual backup script tested; restore path documented for `pb_data`, SQLite database, local files, and external object storage.

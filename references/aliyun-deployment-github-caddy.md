@@ -758,6 +758,14 @@ ALIYUN_OSS_REGION=oss-cn-hangzhou
 ALIYUN_OSS_BUCKET=your-bucket-name
 ALIYUN_OSS_ACCESS_KEY_ID=replace-me
 ALIYUN_OSS_ACCESS_KEY_SECRET=replace-me
+ALIBABA_CLOUD_ACCESS_KEY_ID=replace-me
+ALIBABA_CLOUD_ACCESS_KEY_SECRET=replace-me
+ALIYUN_PNVS_ENDPOINT=dypnsapi.aliyuncs.com
+ALIYUN_SMS_SCHEME_NAME=replace-me
+ALIYUN_SMS_SIGN_NAME=replace-me
+ALIYUN_SMS_TEMPLATE_CODE=replace-me
+SMS_CODE_TTL_SECONDS=300
+SMS_CODE_COOLDOWN_SECONDS=60
 EOF
 sudo chown pocketbase:pocketbase /etc/pbapp/pbapp.env
 sudo chmod 600 /etc/pbapp/pbapp.env
@@ -774,6 +782,7 @@ CORS 和访问：
 - 如果浏览器直接访问 OSS/CDN 域名，需要在 OSS bucket CORS 中允许你的 HTTPS 域名。
 - 私有文件优先让 PocketBase 控制访问，不要把 bucket 整体公开。
 - 用 CDN 时确认缓存策略不会泄漏受保护文件。
+- 阿里云短信认证 AccessKey 也放在服务器环境文件或密钥管理系统中，不能放进前端构建产物、README、GitHub Actions 明文变量或客户端可读 API。
 
 备份：
 
