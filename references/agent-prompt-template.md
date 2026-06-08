@@ -50,7 +50,7 @@
 - 如果网络在国内，请配置 Go 和 NPM 代理：GOPROXY、GOSUMDB、npm registry。
 - 请安装并使用 GitHub CLI `gh` 维护仓库、分支、提交、tag 和 release。
 - 权限必须通过 PocketBase API rules 实现，不要只在前端隐藏按钮。
-- 如果系统面向真实用户，请默认把手机号作为基础身份能力。优先使用阿里云生成并核验验证码：服务端调用 `SendSmsVerifyCode`，模板参数使用动态占位例如 `{"code":"##code##","min":"5"}`，并设置 `CodeType=1`、`CodeLength=6`、`ValidTime=300`、`Interval=60` 等生成和频控参数；服务端再调用 `CheckSmsVerifyCode` 校验用户输入。只有阿里云校验结果明确成功，包括 `Model.VerifyResult = PASS`，才能注册、登录、绑定手机号或通过强身份表单。如果改成 PocketBase 自己生成验证码，只能把阿里云当短信发送通道，PocketBase 必须自己完成哈希存储、过期、次数限制和比对。生产环境不要让验证码返回到接口响应或日志里。
+- 如果系统面向真实用户，请默认把手机号作为基础身份能力，但不要把手机号当作唯一登录方式；PocketBase 仍可支持邮箱密码、管理员邀请、Google/GitHub OAuth 等。优先使用阿里云生成并核验验证码：服务端调用 `SendSmsVerifyCode`，模板参数使用动态占位例如 `{"code":"##code##","min":"5"}`，并设置 `CodeType=1`、`CodeLength=6`、`ValidTime=300`、`Interval=60` 等生成和频控参数；服务端再调用 `CheckSmsVerifyCode` 校验用户输入。只有阿里云校验结果明确成功，包括 `Model.VerifyResult = PASS`，才能注册、登录、绑定手机号或通过强身份表单。默认签名用 `速通互联验证码`，注册/登录/通用表单用模板 `100001`，修改绑定手机号用 `100002`，重置密码用 `100003`，绑定新手机号用 `100004`，验证绑定手机号/敏感操作用 `100005`。请创建 locked/server-only 的 `system_sms_configs`、`system_sms_signatures`、`system_sms_templates` 后台配置表来维护签名、模板、purpose 和频控参数；AccessKey/Secret 默认放服务端环境变量、ECS RAM 角色或加密后的服务端 secret，不要作为普通明文字段。如果改成 PocketBase 自己生成验证码，只能把阿里云当短信发送通道，PocketBase 必须自己完成哈希存储、过期、次数限制和比对。生产环境不要让验证码返回到接口响应或日志里。
 - 手机号短信认证必须由 PocketBase Go 后端实现，不能只做前端页面。AccessKey 不能进前端、不能进 GitHub，验证码不能明文入库或写日志。
 - 文件上传使用 PocketBase file field；如果需要对象存储，请按阿里云 OSS 的 S3 兼容方案配置，endpoint 示例：`https://s3.oss-cn-hangzhou.aliyuncs.com`，并提醒我不要泄漏 AccessKey。
 - 如果部署到服务器，请使用阿里云 ECS + Caddy。Caddy 必须负责 HTTPS，使用免费自动证书。

@@ -148,6 +148,9 @@ Implement this in the PocketBase backend, never only in the frontend:
 - Treat Aliyun-mode verification as successful only when the Aliyun check result is explicitly successful, including `Model.VerifyResult = PASS` in the current API.
 - If the project intentionally uses PocketBase-generated codes and only sends them through Aliyun, do not call Aliyun verification as the source of truth; PocketBase must hash, expire, compare, limit, consume, and audit codes itself.
 - Do not enable returning the verification code in production responses.
+- Use the approved classroom defaults from `references/phone-sms-auth-aliyun.md`: default `SignName=速通互联验证码`; default `TemplateCode=100001` for register/login/form verification; `100002` for changing bound phone, `100003` for password reset, `100004` for binding a new phone, and `100005` for verifying a bound phone or sensitive account action.
+- Create locked/server-only PocketBase config collections such as `system_sms_configs`, `system_sms_signatures`, and `system_sms_templates` so admins can maintain sign/template/purpose/rate-limit settings in the Dashboard.
+- Keep Aliyun credentials in server environment variables, ECS RAM role, or encrypted server-side secret storage; never store AccessKey/Secret as ordinary editable text records.
 - Never store raw SMS codes, never return whether a phone number already exists, and never expose Aliyun AccessKeys to the frontend.
 - Rate limit by phone, IP, purpose, and user agent; add cooldowns and attempt limits.
 - Log masked phone numbers or hashes only.

@@ -197,6 +197,8 @@ owner = @request.auth.id && status != "approved"
 - 默认使用阿里云生成并核验验证码：`SendSmsVerifyCode` 的模板参数使用动态占位，例如 `{"code":"##code##","min":"5"}`，并设置 `CodeType=1`、`CodeLength=6`、`ValidTime=300`、`Interval=60` 等生成和频控参数。
 - 用户输入验证码后，服务端再使用阿里云 `CheckSmsVerifyCode` 校验验证码。
 - 当前阿里云文档中，校验成功要确认 `Model.VerifyResult = PASS`，不能只看 HTTP 成功或 `Code=OK`。
+- 使用已通过审核的默认签名和模板：`速通互联验证码`；`100001` 用于注册/登录/通用表单，`100002` 用于修改绑定手机号，`100003` 用于重置密码，`100004` 用于绑定新手机号，`100005` 用于验证绑定手机号或敏感操作。
+- 创建 locked/server-only 的 `system_sms_configs`、`system_sms_signatures`、`system_sms_templates`，让后台维护 purpose、签名、模板、有效期、频控等参数。
 - PocketBase 不需要自己生成或保存验证码；只保存 challenge、attempt、purpose、phone hash、阿里云 request id 等审计信息。
 - 如果项目明确改成 PocketBase 自己生成验证码，则阿里云只是短信发送通道，PocketBase 必须自己实现验证码哈希存储、TTL、错误次数、频控、消费和审计。
 - AccessKey 不能进前端、不能进 GitHub。

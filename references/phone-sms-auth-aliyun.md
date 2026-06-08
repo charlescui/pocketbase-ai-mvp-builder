@@ -5,9 +5,12 @@
 - [目标](#目标)
 - [适用场景](#适用场景)
 - [阿里云准备](#阿里云准备)
+- [课堂默认签名和模板](#课堂默认签名和模板)
+- [PocketBase 后台配置表](#pocketbase-后台配置表)
 - [两种验证码模式](#两种验证码模式)
 - [PocketBase 数据模型](#pocketbase-数据模型)
 - [后端接口设计](#后端接口设计)
+- [Go SDK 调用示例](#go-sdk-调用示例)
 - [注册和登录流程](#注册和登录流程)
 - [高可信表单验证](#高可信表单验证)
 - [安全规则](#安全规则)
@@ -61,15 +64,15 @@ Agent 在实现前要引导用户准备：
 - 使用 RAM 用户创建 AccessKey，权限最小化，只允许调用相关短信认证 API。
 - 确认费用、频控、模板审核状态和短信送达范围。
 
-推荐环境变量：
+推荐环境变量。阿里云 Go SDK 使用 `credential.NewCredential(nil)` 时会读取标准环境变量，优先建议使用 RAM 角色或服务端环境变量，不要把 AccessKey 写进前端、GitHub 或普通数据库字段：
 
 ```bash
 ALIBABA_CLOUD_ACCESS_KEY_ID=replace-me
 ALIBABA_CLOUD_ACCESS_KEY_SECRET=replace-me
 ALIYUN_PNVS_ENDPOINT=dypnsapi.aliyuncs.com
 ALIYUN_SMS_SCHEME_NAME=replace-me
-ALIYUN_SMS_SIGN_NAME=replace-me
-ALIYUN_SMS_TEMPLATE_CODE=replace-me
+ALIYUN_SMS_DEFAULT_SIGN_NAME=速通互联验证码
+ALIYUN_SMS_DEFAULT_TEMPLATE_CODE=100001
 SMS_CODE_TTL_SECONDS=300
 SMS_CODE_LENGTH=6
 ALIYUN_SMS_CODE_TYPE=1
@@ -80,6 +83,99 @@ SMS_MAX_SENDS_PER_IP_PER_HOUR=20
 ```
 
 如果官方 SDK、endpoint、参数名在新版本中变化，先以阿里云 OpenAPI Explorer 和当前文档为准。
+
+## 课堂默认签名和模板
+
+阿里云文档提醒：赠送签名必须搭配赠送模板使用。课堂和 MVP 项目默认优先使用以下已通过审核的赠送签名配置/自定义签名配置与模板；agent 不要随意填写未审核签名或未审核模板。
+
+已通过签名：
+
+| 签名名称 | 审核状态 | 建议用途 |
+| --- | --- | --- |
+| 云渚科技验证平台 | 通过 | 备用签名 |
+| 云渚科技验证服务 | 通过 | 备用签名 |
+| 速通互联验证码 | 通过 | 默认验证码签名 |
+| 速通互联验证平台 | 通过 | 备用签名 |
+| 速通互联验证服务 | 通过 | 备用签名 |
+
+已通过模板：
+
+| 模板名称 | 模板 CODE | 模板内容 | 推荐 purpose |
+| --- | --- | --- | --- |
+| 登录/注册模板 | `100001` | 您的验证码为`${code}`。尊敬的客户，以上验证码`${min}`分钟内有效，请注意保密，切勿告知他人。 | `register`、`login`、通用 `form_verify` |
+| 修改绑定手机号模板 | `100002` | 尊敬的客户，您正在进行修改手机号操作，您的验证码为`${code}`。以上验证码`${min}`分钟内有效，请注意保密，切勿告知他人。 | `change_phone` |
+| 重置密码模板 | `100003` | 尊敬的客户，您正在进行重置密码操作，您的验证码为`${code}`。以上验证码`${min}`分钟内有效，请注意保密，切勿告知他人。 | `password_reset` |
+| 绑定新手机号模板 | `100004` | 尊敬的客户，您正在进行绑定手机号操作，您的验证码为`${code}`。以上验证码`${min}`分钟内有效，请注意保密，切勿告知他人。 | `bind_phone` |
+| 验证绑定手机号模板 | `100005` | 尊敬的客户，您正在验证绑定手机号操作，您的验证码为`${code}`。以上验证码`${min}`分钟内有效，请注意保密，切勿告知他人。 | `verify_bound_phone`、账号敏感操作二次验证 |
+
+默认映射：
+
+```text
+register       -> SignName=速通互联验证码, TemplateCode=100001
+login          -> SignName=速通互联验证码, TemplateCode=100001
+form_verify    -> SignName=速通互联验证码, TemplateCode=100001
+change_phone   -> SignName=速通互联验证码, TemplateCode=100002
+password_reset -> SignName=速通互联验证码, TemplateCode=100003
+bind_phone     -> SignName=速通互联验证码, TemplateCode=100004
+verify_bound_phone -> SignName=速通互联验证码, TemplateCode=100005
+```
+
+如果某个业务文案不匹配现有模板，agent 应先提醒用户去阿里云控制台新增并审核模板，不要为了省事用语义不匹配的模板。
+
+## PocketBase 后台配置表
+
+建议把短信业务配置做成 PocketBase 后台可维护的 locked/server-only collection，而不是写死在代码里。这样运营或管理员可以在后台切换签名、模板、有效期和频控参数。
+
+推荐 collection：`system_sms_configs`，所有客户端 API rules 设为 locked/null，只允许 superuser 或受信任的后台工具维护。
+
+```text
+purpose             select: register/login/form_verify/change_phone/password_reset/bind_phone/verify_bound_phone
+enabled             bool
+sign_name           text, e.g. 速通互联验证码
+template_code       text, e.g. 100001
+template_name       text
+scheme_name         text, optional
+country_code        text, default 86
+code_type           number, default 1
+code_length         number, default 6
+valid_time_seconds  number, default 300
+interval_seconds    number, default 60
+duplicate_policy    number, default 1
+auto_retry          number, default 1
+template_param_json json, optional template override
+notes               text
+updated_by          relation -> users, optional
+created             date
+updated             date
+```
+
+推荐 collection：`system_sms_signatures`，用于记录可选签名和审核状态。
+
+```text
+sign_name       text, unique
+status          select: passed/pending/rejected
+source          select: gifted/custom
+is_default      bool
+notes           text
+```
+
+推荐 collection：`system_sms_templates`，用于记录模板和用途。
+
+```text
+template_code   text, unique
+template_name   text
+template_body   text
+purpose         select or text
+status          select: passed/pending/rejected
+notes           text
+```
+
+重要边界：
+
+- `ALIBABA_CLOUD_ACCESS_KEY_ID`、`ALIBABA_CLOUD_ACCESS_KEY_SECRET` 默认放服务端环境变量或 ECS RAM 角色，不建议明文放 PocketBase 数据库。
+- 如果项目确实要求后台动态维护 secret，必须启用 PocketBase settings encryption 或应用层加密，并单独保存 `PB_ENCRYPTION_KEY`；同时禁止把 secret 输出到日志、备份说明、GitHub issue、前端接口。
+- 签名、模板、purpose、有效期、频控参数可以进配置表。
+- 代码启动时先读配置表；配置表没有记录时使用环境变量默认值；如果两者都没有，启动短信能力时明确报错。
 
 ## 两种验证码模式
 
@@ -262,6 +358,136 @@ POST /api/forms/:collection/:id/verify-phone
 5. 标记 challenge `verified` 或 `failed`，记录 attempts、error code、verified_at。
 6. 对注册/登录流程，继续创建用户或签发 auth token。
 7. 对表单流程，给目标记录打上 phone verified 标记。
+
+## Go SDK 调用示例
+
+Agent 实现时应把阿里云调用封装成 PocketBase Go 后端的内部 service，例如 `internal/sms/aliyun.go`。不要把 OpenAPI Explorer 的 demo 代码原样散落在 route 里。
+
+安装依赖：
+
+```bash
+go get github.com/alibabacloud-go/dypnsapi-20170525/v3
+go get github.com/alibabacloud-go/darabonba-openapi/v2
+go get github.com/alibabacloud-go/tea-utils/v2
+go get github.com/aliyun/credentials-go/credentials
+go get github.com/alibabacloud-go/tea
+```
+
+发送验证码的核心写法。下面保留的是业务关键字段；工程里要从 `system_sms_configs` 和环境变量读取配置，不要写死手机号、AccessKey 或模板。
+
+```go
+package sms
+
+import (
+	"encoding/json"
+	"fmt"
+
+	dypnsapi20170525 "github.com/alibabacloud-go/dypnsapi-20170525/v3/client"
+	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
+	"github.com/alibabacloud-go/tea/tea"
+	util "github.com/alibabacloud-go/tea-utils/v2/service"
+	credential "github.com/aliyun/credentials-go/credentials"
+)
+
+type SmsConfig struct {
+	Endpoint        string
+	SchemeName      string
+	SignName        string
+	TemplateCode    string
+	CountryCode     string
+	CodeType        int64
+	CodeLength      int64
+	ValidTime       int64
+	Interval        int64
+	DuplicatePolicy int64
+	AutoRetry       int64
+}
+
+func NewAliyunClient(endpoint string) (*dypnsapi20170525.Client, error) {
+	cred, err := credential.NewCredential(nil)
+	if err != nil {
+		return nil, err
+	}
+	config := &openapi.Config{
+		Credential: cred,
+		Endpoint:   tea.String(endpoint),
+	}
+	return dypnsapi20170525.NewClient(config)
+}
+
+func SendSmsVerifyCode(client *dypnsapi20170525.Client, cfg SmsConfig, phone string, outID string) (string, error) {
+	templateParam, _ := json.Marshal(map[string]string{
+		"code": "##code##",
+		"min":  fmt.Sprintf("%d", cfg.ValidTime/60),
+	})
+
+	req := &dypnsapi20170525.SendSmsVerifyCodeRequest{
+		SignName:        tea.String(cfg.SignName),
+		TemplateCode:    tea.String(cfg.TemplateCode),
+		PhoneNumber:     tea.String(phone),
+		CountryCode:     tea.String(cfg.CountryCode),
+		TemplateParam:   tea.String(string(templateParam)),
+		CodeType:        tea.Int64(cfg.CodeType),
+		CodeLength:      tea.Int64(cfg.CodeLength),
+		ValidTime:       tea.Int64(cfg.ValidTime),
+		Interval:        tea.Int64(cfg.Interval),
+		DuplicatePolicy: tea.Int64(cfg.DuplicatePolicy),
+		AutoRetry:       tea.Int64(cfg.AutoRetry),
+		OutId:           tea.String(outID),
+		ReturnVerifyCode: tea.Bool(false),
+	}
+	if cfg.SchemeName != "" {
+		req.SchemeName = tea.String(cfg.SchemeName)
+	}
+
+	resp, err := client.SendSmsVerifyCodeWithOptions(req, &util.RuntimeOptions{})
+	if err != nil {
+		return "", err
+	}
+	if resp == nil || resp.Body == nil {
+		return "", fmt.Errorf("aliyun SendSmsVerifyCode empty response")
+	}
+	if !tea.BoolValue(resp.Body.Success) || tea.StringValue(resp.Body.Code) != "OK" {
+		return "", fmt.Errorf("aliyun SendSmsVerifyCode failed: code=%s message=%s", tea.StringValue(resp.Body.Code), tea.StringValue(resp.Body.Message))
+	}
+	return tea.StringValue(resp.Body.RequestId), nil
+}
+```
+
+核验验证码的核心写法：
+
+```go
+func CheckSmsVerifyCode(client *dypnsapi20170525.Client, cfg SmsConfig, phone string, outID string, code string) (bool, error) {
+	req := &dypnsapi20170525.CheckSmsVerifyCodeRequest{
+		PhoneNumber:    tea.String(phone),
+		CountryCode:    tea.String(cfg.CountryCode),
+		VerifyCode:     tea.String(code),
+		OutId:          tea.String(outID),
+		CaseAuthPolicy: tea.Int64(1),
+	}
+	if cfg.SchemeName != "" {
+		req.SchemeName = tea.String(cfg.SchemeName)
+	}
+
+	resp, err := client.CheckSmsVerifyCodeWithOptions(req, &util.RuntimeOptions{})
+	if err != nil {
+		return false, err
+	}
+	if resp == nil || resp.Body == nil || resp.Body.Model == nil {
+		return false, fmt.Errorf("aliyun CheckSmsVerifyCode empty response")
+	}
+	return tea.StringValue(resp.Body.Code) == "OK" &&
+		tea.BoolValue(resp.Body.Success) &&
+		tea.StringValue(resp.Body.Model.VerifyResult) == "PASS", nil
+}
+```
+
+工程注意：
+
+- 用户给 agent 的阿里云示例代码可以用来确认包名、endpoint、`SendSmsVerifyCodeRequest` 字段和异常处理方式。
+- 真实工程要把手机号改成接口入参，先做格式校验和频控，再调用阿里云。
+- 不要打印完整 `resp`；只记录 request id、out id、错误码、脱敏手机号或 hash。
+- 如果当前 SDK 版本的 `NewClient` 或 `RuntimeOptions` 类型与示例不同，agent 应以阿里云 OpenAPI Explorer 当前生成的 Go 代码为准，保留同样的业务字段和安全判断。
 
 ## 注册和登录流程
 
