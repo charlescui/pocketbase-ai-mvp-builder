@@ -194,11 +194,14 @@ owner = @request.auth.id && status != "approved"
 必须遵守：
 
 - 短信发送和验证码校验只在服务端做。
-- 使用阿里云 `SendSmsVerifyCode` 发送验证码。
-- 使用阿里云 `CheckSmsVerifyCode` 校验验证码。
+- 默认使用阿里云生成并核验验证码：`SendSmsVerifyCode` 的模板参数使用动态占位，例如 `{"code":"##code##","min":"5"}`，并设置 `CodeType=1`、`CodeLength=6`、`ValidTime=300`、`Interval=60` 等生成和频控参数。
+- 用户输入验证码后，服务端再使用阿里云 `CheckSmsVerifyCode` 校验验证码。
 - 当前阿里云文档中，校验成功要确认 `Model.VerifyResult = PASS`，不能只看 HTTP 成功或 `Code=OK`。
+- PocketBase 不需要自己生成或保存验证码；只保存 challenge、attempt、purpose、phone hash、阿里云 request id 等审计信息。
+- 如果项目明确改成 PocketBase 自己生成验证码，则阿里云只是短信发送通道，PocketBase 必须自己实现验证码哈希存储、TTL、错误次数、频控、消费和审计。
 - AccessKey 不能进前端、不能进 GitHub。
 - 验证码不能明文入库或写日志。
+- 生产环境不要启用验证码返回到响应、数据库或日志。
 - 客户端不能直接设置 `phone_verified`、`phone_verified_at`、`phone_verification_id`。
 - 错误文案不能暴露“手机号是否已注册”，防止枚举账号。
 

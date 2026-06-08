@@ -5,6 +5,7 @@
 - [目标](#目标)
 - [适用场景](#适用场景)
 - [阿里云准备](#阿里云准备)
+- [两种验证码模式](#两种验证码模式)
 - [PocketBase 数据模型](#pocketbase-数据模型)
 - [后端接口设计](#后端接口设计)
 - [注册和登录流程](#注册和登录流程)
@@ -29,6 +30,7 @@
 - 不要自己在前端生成验证码。
 - 不要把验证码明文写入数据库或日志。
 - 阿里云校验成功不能只看 HTTP 成功，也不能只看 `Code=OK`；当前文档中还要确认 `Model.VerifyResult = PASS`。
+- 生产环境不要把验证码返回到 API 响应、数据库或日志。
 
 ## 适用场景
 
@@ -69,6 +71,8 @@ ALIYUN_SMS_SCHEME_NAME=replace-me
 ALIYUN_SMS_SIGN_NAME=replace-me
 ALIYUN_SMS_TEMPLATE_CODE=replace-me
 SMS_CODE_TTL_SECONDS=300
+SMS_CODE_LENGTH=6
+ALIYUN_SMS_CODE_TYPE=1
 SMS_CODE_COOLDOWN_SECONDS=60
 SMS_MAX_ATTEMPTS=5
 SMS_MAX_SENDS_PER_PHONE_PER_DAY=10
@@ -76,6 +80,62 @@ SMS_MAX_SENDS_PER_IP_PER_HOUR=20
 ```
 
 如果官方 SDK、endpoint、参数名在新版本中变化，先以阿里云 OpenAPI Explorer 和当前文档为准。
+
+## 两种验证码模式
+
+实现前必须先选清楚验证码模式。不要把两种模式混在一起。
+
+### 推荐：阿里云生成验证码，阿里云核验验证码
+
+这是本 skill 默认推荐模式，适合“注册/登录/绑定手机号/强身份表单”。
+
+流程：
+
+1. PocketBase 后端调用 `SendSmsVerifyCode`。
+2. `TemplateParam` 使用阿里云动态验证码占位，例如：
+
+```json
+{"code":"##code##","min":"5"}
+```
+
+3. 设置验证码生成参数。使用占位符时 `CodeType` 必填，推荐 `CodeType=1`、`CodeLength=6`、`ValidTime=300`、`Interval=60`。
+4. 阿里云生成验证码并发送短信。
+5. 用户输入验证码。
+6. PocketBase 后端调用 `CheckSmsVerifyCode`。
+7. 只有 `Model.VerifyResult = PASS` 才标记手机号已验证。
+
+这个模式的好处：
+
+- PocketBase 不需要生成和保存验证码。
+- 不需要自己比对验证码明文。
+- 验证码生命周期和校验由阿里云短信认证服务承接。
+- 后端只保存 challenge/audit/attempt 状态即可。
+
+### 可选：PocketBase 自己生成验证码，只用阿里云发送短信
+
+这个模式也能实现，但此时阿里云只是短信发送通道，不再负责验证码核验。只有在业务明确要求自管验证码，或者当前阿里云模板/API 不适合动态验证码时才使用。
+
+流程：
+
+1. PocketBase 后端生成随机验证码。
+2. PocketBase 只保存验证码哈希，不保存明文。
+3. PocketBase 调用短信发送能力，把具体验证码填入模板。
+4. 用户输入验证码。
+5. PocketBase 后端自行比对验证码哈希、TTL、attempts、purpose、phone、challenge。
+6. 验证成功后消费 challenge 并标记手机号已验证。
+
+自管验证码必须额外实现：
+
+- 加密安全随机数。
+- 验证码哈希存储。
+- 5 分钟左右 TTL。
+- 同手机号、同 IP、同 purpose 频控。
+- 错误次数上限。
+- 消费后不可复用。
+- 重放攻击防护。
+- 日志脱敏。
+
+注意：如果把具体验证码值传给阿里云模板，例如 `{"code":"123456"}`，就不要再调用 `CheckSmsVerifyCode` 期待阿里云帮你核验。此时核验责任在 PocketBase。
 
 ## PocketBase 数据模型
 
@@ -115,7 +175,7 @@ created             date
 updated             date
 ```
 
-不要存储短信验证码明文。需要排障时记录 `out_id`、阿里云 request id、错误码、masked phone 或 hash。
+推荐模式下不要存储短信验证码明文，也不需要存储验证码哈希。需要排障时记录 `out_id`、阿里云 request id、错误码、masked phone 或 hash。自管验证码模式才允许保存验证码哈希字段，且必须设置 TTL 和消费状态。
 
 对高可信表单，业务 collection 增加：
 
@@ -158,13 +218,15 @@ POST /api/forms/:collection/:id/verify-phone
 3. 做频控：同手机号 cooldown、每日上限、同 IP 小时上限、失败次数上限。
 4. 生成 `out_id`，写入 `sms_challenges`。
 5. 调用阿里云 `SendSmsVerifyCode`。
-6. 如果模板使用阿里云动态生成验证码，`TemplateParam` 使用类似：
+6. 默认使用阿里云动态生成验证码，`TemplateParam` 使用类似：
 
 ```json
 {"code":"##code##","min":"5"}
 ```
 
-7. 返回统一响应，例如：
+7. 同时设置 `CodeType=1`、`CodeLength=6`、`ValidTime=300`、`Interval=60`。使用 `##code##` 占位时 `CodeType` 必填；如需重复发送策略，可设置 `DuplicatePolicy=1` 让新验证码覆盖旧验证码。
+8. 生产环境不要启用把验证码返回给调用方的调试参数；如果 SDK 暴露 `ReturnVerifyCode`，生产环境必须保持关闭。
+9. 返回统一响应，例如：
 
 ```json
 {
@@ -195,8 +257,8 @@ POST /api/forms/:collection/:id/verify-phone
 
 1. 查找未过期、未消费、purpose 匹配的 challenge。
 2. 检查 attempts 上限。
-3. 调用阿里云 `CheckSmsVerifyCode`。
-4. 只有在 API 成功且 `Model.VerifyResult = PASS` 时认为成功。
+3. 推荐模式下调用阿里云 `CheckSmsVerifyCode`；自管验证码模式下改为 PocketBase 自己比对验证码哈希。
+4. 推荐模式下只有在 API 成功且 `Model.VerifyResult = PASS` 时认为成功；自管验证码模式下只有本地哈希、TTL、attempts、purpose、phone 都通过才认为成功。
 5. 标记 challenge `verified` 或 `failed`，记录 attempts、error code、verified_at。
 6. 对注册/登录流程，继续创建用户或签发 auth token。
 7. 对表单流程，给目标记录打上 phone verified 标记。

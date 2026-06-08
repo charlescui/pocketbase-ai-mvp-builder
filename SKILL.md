@@ -144,8 +144,10 @@ Implement this in the PocketBase backend, never only in the frontend:
 
 - Add locked/server-only audit collections for SMS challenges and verification attempts.
 - Add custom Go routes for requesting and checking codes.
-- Call Aliyun `SendSmsVerifyCode` to send a code and `CheckSmsVerifyCode` to verify it.
-- Treat verification as successful only when the Aliyun check result is explicitly successful, including `Model.VerifyResult = PASS` in the current API.
+- Prefer Aliyun-generated verification codes: call `SendSmsVerifyCode` with the dynamic code placeholder such as `{"code":"##code##","min":"5"}`, set code-generation parameters such as `CodeType=1`, `CodeLength=6`, `ValidTime=300`, and `Interval=60`, then call `CheckSmsVerifyCode` to verify user input.
+- Treat Aliyun-mode verification as successful only when the Aliyun check result is explicitly successful, including `Model.VerifyResult = PASS` in the current API.
+- If the project intentionally uses PocketBase-generated codes and only sends them through Aliyun, do not call Aliyun verification as the source of truth; PocketBase must hash, expire, compare, limit, consume, and audit codes itself.
+- Do not enable returning the verification code in production responses.
 - Never store raw SMS codes, never return whether a phone number already exists, and never expose Aliyun AccessKeys to the frontend.
 - Rate limit by phone, IP, purpose, and user agent; add cooldowns and attempt limits.
 - Log masked phone numbers or hashes only.

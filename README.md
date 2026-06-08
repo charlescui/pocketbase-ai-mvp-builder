@@ -146,6 +146,10 @@ gitGraph
 
 新系统面向真实用户时，手机号通常是最基础的身份能力。这个 skill 要求 agent 把短信验证码注册/登录做在 PocketBase Go 后端，并使用阿里云号码认证服务。
 
+默认推荐使用阿里云生成并核验验证码：PocketBase 调用 `SendSmsVerifyCode`，模板参数使用动态占位 `{"code":"##code##","min":"5"}`，同时设置 `CodeType=1`、`CodeLength=6`、`ValidTime=300`、`Interval=60` 这类验证码生成和频控参数；用户输入验证码后，PocketBase 再调用 `CheckSmsVerifyCode`，并且只有 `Model.VerifyResult=PASS` 才算通过。
+
+如果改成 PocketBase 自己生成验证码、只用阿里云发送短信，也可以，但那时阿里云只是短信通道，PocketBase 必须自己完成验证码哈希存储、过期、错误次数、频控、消费和审计。
+
 ```mermaid
 sequenceDiagram
     participant U as 用户
@@ -173,6 +177,8 @@ sequenceDiagram
 - AccessKey 只在服务端。
 - 验证码不能明文入库或写日志。
 - `phone_verified` 只能由后端写入。
+- 默认推荐 `SendSmsVerifyCode` + `CheckSmsVerifyCode` 成套使用。
+- 生产环境不要让阿里云接口把验证码返回给后端响应或日志。
 - 不暴露手机号是否已注册。
 - 按手机号、IP、purpose 做限流。
 - 表单手机号如果有强身份要求，也必须经过短信校验。
